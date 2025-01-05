@@ -45,7 +45,7 @@ if(window.location.pathname.indexOf('/Users/')) {
                 if (!prices.hasOwnProperty(id) || prices[id] === 'to load')
                     prices[id] = 'to load'
                 else
-                    addPriceInformationForSiteUsers(id, prices[id])
+                    addPriceInformationForSiteUsers(id, prices[id], eurToFloat($(this).find('.col-offer .price-container').text()))
                 console.log(prices[id])
             }
         })
@@ -141,13 +141,13 @@ if(window.location.pathname.indexOf('/Wants/')) {
     }))
 }
 
-function addPriceInformationForSiteUsers(id, prices) {
+function addPriceInformationForSiteUsers(id, prices, priceCompare) {
     const rows = $('#UserOffersTable .table-body div[id^=articleRow]').filter(function() {
         return $(this).find('.col-seller').text().indexOf('(' + id + ')') > 0
     })
     rows.find('.product-comments, .prices').remove()
     rows.find('.product-attributes').append($('<div class="prices small"><span>' + prices.map(p => (
-        '<b style="color:green">' + p.price + '</b>'
+        '<b style="color:' + (p.price <= priceCompare ? 'green' : 'red') + '">' + p.price + '</b>'
         + ' (' + p.amountAvailable + ')'
         + (p.print ? ' ' + p.print + p.name.replace(/^.*?(\(V\.\d+\))?$/g, '$1') : '')
     )).join('</span><br><span>') + '</span></div>'))
