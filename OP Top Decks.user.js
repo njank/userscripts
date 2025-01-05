@@ -90,6 +90,8 @@ const uiButtonAnalyse = $('<button>analyse</button>').on('click', function() {
         //   1nOP01-060a4nOP01-077a4nOP07-046a2nST17-003a2nST17-005a3nOP06-047a2nOP07-047a4nOP07-040a4nOP07-045a2nST03-004a4nST03-005a4nST17-002a4nEB01-023a4nST17-004a4nOP08-047a1nST03-009a1nOP05-118a1nOP07-057
         // blue doffy st-17 (https://www.youtube.com/watch?v=sDkSO8L-lWc)
         //   1nOP01-60a4nEB01-023a4nOP01-077a2nOP05-118a4nST17-001a4nOP07-045a4nOP07-046a4nST03-004a4nST03-005a4nOP07-040a4nST17-002a4nST17-003a4nST17-004a2nOP04-056a2nOP06-058
+        // blue doffy st-17 (https://gumgum.gg/decklists/deck/east/op10/304be6e7-fbfb-4920-baad-b7845cbb83c7)
+        //   1nOP01-060a4nOP01-077a4nOP07-046a3nST17-003a3nST17-005a2nOP06-047a4nOP07-040a4nOP07-045a2nST03-004a4nST03-005a4nST17-002a4nEB01-023a4nST17-004a3nOP08-047a2nST03-009a1nOP07-057a2nOP04-056
     } else {
         // source decks found by filter
         $("[id^=tablepress-] tr:not(.row-1)").each(function( index ) {
@@ -152,7 +154,7 @@ const uiButtonAnalyse = $('<button>analyse</button>').on('click', function() {
     }
     console.log(merged)
 
-    // format
+    // format to object
     let formatted = []
     for(let i=0; i<merged.cards.length; i++)
         formatted[i] = {
@@ -164,6 +166,18 @@ const uiButtonAnalyse = $('<button>analyse</button>').on('click', function() {
             notes:merged.notes[i],
         }
     console.log(formatted)
+
+    // format to text
+    let out = ''
+    const sorted = formatted.sort((a,b)=>{
+        return b.card < a.card ? -1 : 1
+    })
+    for(let i=0; i<sorted.length; i++) {
+        const needCount = Math.round(sorted[i].countTotal/decks.length)
+        if(needCount > sorted[i].countStart && needCount - sorted[i].countStart > 0)
+            out += (needCount - sorted[i].countStart) + 'x ' + sorted[i].card + '\n'
+    }
+    console.log(out)
 
     // difference
     let cardsAdded=0, cardsRemoved=0, cardsAddedSameSourceDecks=0
@@ -194,3 +208,14 @@ const uiButtonAnalyse = $('<button>analyse</button>').on('click', function() {
 })
 
 $('[id^=tablepress-] .dt-search').append(uiDropdownBase).append(uiButtonAnalyse)
+
+
+let cards = []
+$.get( "https://asia-en.onepiece-cardgame.com/cardlist/", function( data ) {
+    $(data).find( ".modalCol" ).each(function( index ) {
+        cards[$(this).attr('id')].push({
+            name: $(this).find('.cardName').text()
+        })
+    })
+    console.log(cards)
+})
