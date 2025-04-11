@@ -2,7 +2,7 @@
 // @name         OP Cardmarket
 // @description  OP Cardmarket
 // @namespace    njank
-// @version      0.0.2
+// @version      0.0.3
 // @author       njank
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -27,7 +27,7 @@ function setCachedObject(cachedKey, obj) {
 const keyPrice = 'price6'
 
 const eurToFloat = s => parseFloat(s.replace(/^.*?(\d+),(\d+).*?$/, '$1.$2'))
-const nameToId = s => s.replace(/^.*?\((.*?)\).*$/, '$1')
+const nameToId = s => s.replace(/^.*\(([A-Z0-9-]+)\).*?$/, '$1')
 const urlParams = new URLSearchParams(window.location.search)
 
 /*** USERS ***/
@@ -72,37 +72,94 @@ if(window.location.pathname.indexOf('/Users/')) {
             alert( data );
         })*/
 
+
+        // get shopping cart
+        async function fetchCart() {
+            try {
+                let cart = []
+                const user = window.location.pathname.replace(/^.*\/Users\/([^\/]+)\/.*$/, '$1')
+                const data = await $.get("/en/OnePiece/ShoppingCart")
+
+                $(data).find(`#shipments-col .card-body a:contains("${user}")`)
+                        .closest('.card-body')
+                        .find('table[id^="ArticleTable"] tbody tr')
+                        .each(function() {
+                    const id = nameToId($(this).attr('data-name'))
+                    const amount = parseInt($(this).find('.amount').attr('data-amount'))
+                    cart[id] = (id in cart ? cart[id] : 0) + amount
+                })
+                return cart
+            } catch (error) {
+                throw new Error('fetchCart failed')
+            }
+        }
+
         // get wants list information
-        $.get( "https://www.cardmarket.com/en/OnePiece/Wants/" + idWantslist, function( data ) {
-            let wantsList = []
-            $(data).find('#WantsListTable table tbody tr').each(function( index ) {
-                const name = nameToId($(this).find('.name a').text())
-                const amount = parseInt($(this).find('.amount').text())
-                wantsList[name] = amount
-            })
-            console.log(wantsList)
+        async function fetchWantsList() {
+            try {
+                let wantsList = []
+                const data = await $.get(`/en/OnePiece/Wants/${idWantslist}`)
 
-            let sum = 0, totalAmount = 0
-            $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
-                // add amount
-                const name = nameToId($(this).find('.col-seller').text())
-                $(this).find('.col-offer').prepend(wantsList[name])
+                $(data).find('#WantsListTable table tbody tr').each(function() {
+                    const id = nameToId($(this).find('.name a').text())
+                    const amount = parseInt($(this).find('.amount').text())
+                    wantsList[id] = amount
+                })
+                return wantsList
+            } catch (error) {
+                throw new Error('fetchWantsList failed')
+            }
+        }
 
-                // calc sum
-                const priceSeller = eurToFloat($(this).find('.col-offer .price-container').text())
-                const amountSeller = parseInt($(this).find('.col-offer .amount-container .item-count').text())
-                const amountNeededAndAvailable = Math.min(amountSeller, wantsList[name])
-                //console.log(name, wantsList[name], amountSeller, amountNeededAndAvailable)
+        $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
+            $(this).find('.col-offer').prepend('<span class="want"></span><span class="cart" style="font-size:10px"></span>')
+        });
 
-                sum += priceSeller * amountNeededAndAvailable
-                totalAmount += amountNeededAndAvailable
+        (async () => {
+            try {
+                const wantsList = await fetchWantsList()
 
-                // select max amount
-                $(this).find('select[name^=amount]').val(amountNeededAndAvailable)
-            })
+                let sum = 0, totalAmount = 0
+                $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
+                    // add amount
+                    const id = nameToId($(this).find('.col-seller').text())
+                    $(this).find('.col-offer .want').text(wantsList[id])
 
-            $('#UserOffersTable .table-header .col-offer').prepend(`${totalAmount} pcs ${Math.round(sum*100)/100} € / `)
-        })
+                    // calc sum
+                    const priceSeller = eurToFloat($(this).find('.col-offer .price-container').text())
+                    const amountSeller = parseInt($(this).find('.col-offer .amount-container .item-count').text())
+                    const amountNeededAndAvailable = Math.min(amountSeller, wantsList[id])
+                    //console.log(id, wantsList[id], amountSeller, amountNeededAndAvailable)
+
+                    sum += priceSeller * amountNeededAndAvailable
+                    totalAmount += amountNeededAndAvailable
+
+                    // select max amount
+                    $(this).find('select[name^=amount]').val(amountNeededAndAvailable)
+                })
+
+                $('#UserOffersTable .table-header .col-offer').prepend(`${totalAmount} pcs ${Math.round(sum*100)/100} € / `) // header
+
+
+            } catch (error) {
+                console.error(error)
+            }
+        })();
+
+        (async () => {
+            try {
+                const cart = await fetchCart()
+
+                $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
+                    // add amount
+                    const id = nameToId($(this).find('.col-seller').text())
+                    $(this).find('.col-offer .cart').text((id in cart ? -cart[id] : ""))
+                })
+            } catch (error) {
+                console.error(error)
+            }
+        })();
+
     }
 }
 
@@ -147,7 +204,7 @@ function addPriceInformationForSiteUsers(id, prices, priceCompare) {
     })
     rows.find('.product-comments, .prices').remove()
     rows.find('.product-attributes').append($('<div class="prices small"><span>' + prices.map(p => (
-        '<b style="color:' + (p.price <= priceCompare ? 'green' : 'red') + '">' + p.price + '</b>'
+        '<b style="color:' + (p.price <= priceCompare ? 'green' : 'red') + '" prop="'+p.price+' >=? '+priceCompare+' := '+(p.price <= priceCompare)+'">' + p.price + '</b>'
         + ' (' + p.amountAvailable + ')'
         + (p.print ? ' ' + p.print + p.name.replace(/^.*?(\(V\.\d+\))?$/g, '$1') : '')
     )).join('</span><br><span>') + '</span></div>'))
