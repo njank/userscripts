@@ -2,16 +2,16 @@
 // @name         OP Cardmarket
 // @description  OP Cardmarket
 // @namespace    njank
-// @version      0.0.3
+// @version      0.0.4
 // @author       njank
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addStyle
-// @match        https://www.cardmarket.com/en/OnePiece/Users/*/Offers/*
-// @match        https://www.cardmarket.com/en/OnePiece/Wants/*
-
+// @match        https://www.cardmarket.com/*/OnePiece/*
 // @require      http://code.jquery.com/jquery-latest.min.js
 // ==/UserScript==
+
+const urlGoogleSheets = 'https://script.googleusercontent.com/macros/echo?user_content_key=xxx'
 
 function getCachedObject(cachedKey, fallback={}) {
     let obj = GM_getValue(cachedKey)
@@ -42,7 +42,7 @@ if(window.location.pathname.indexOf('/Users/')) {
             if($(this).find('.col-seller').text()) {
                 const id = nameToId($(this).find('.col-seller').text())
                 console.log(id)
-                if (!prices.hasOwnProperty(id) || prices[id] === 'to load')
+                if (id && !prices.hasOwnProperty(id) || prices[id] === 'to load')
                     prices[id] = 'to load'
                 else
                     addPriceInformationForSiteUsers(id, prices[id], eurToFloat($(this).find('.col-offer .price-container').text()))
@@ -67,11 +67,6 @@ if(window.location.pathname.indexOf('/Users/')) {
     const idWantslist = urlParams.get('idWantslist')
     if(idWantslist) {
         console.log(idWantslist)
-
-        /*$.get( "https://api.cardmarket.com/ws/v2.0/wantslist/" + idWantslist, function( data ) {
-            alert( data );
-        })*/
-
 
         // get shopping cart
         async function fetchCart() {
@@ -164,7 +159,6 @@ if(window.location.pathname.indexOf('/Users/')) {
 }
 
 /*** MY LIST ***/
-// https://www.cardmarket.com/en/OnePiece/Wants/19689401
 if(window.location.pathname.indexOf('/Wants/')) {
     // PRICES
     $('.container > div:nth-child(4) > div:nth-child(2)').append($('<a role="button" class="btn btn-outline-success ms-lg-3 mt-2 mt-lg-0">Load</a>').click(function() {
@@ -198,13 +192,51 @@ if(window.location.pathname.indexOf('/Wants/')) {
     }))
 }
 
+/*** SHOPPING CART ***/
+if(window.location.pathname.indexOf('/ShoppingCart')) {
+
+    const langToCode = str => ({Japanese:'jp',English:'en',French:'fr','S-Chinese':'cn'})[str] || str.toLowerCase().slice(0,2)
+    const getCount = (stash, id, lang) => stash.find(s => s[1] === id && s[2] === lang)?.[0] ?? 0
+
+    // get stash
+    async function fetchStash() {
+        try {
+            const data = await $.get(urlGoogleSheets)
+            return data.values
+        } catch (error) {
+            throw new Error('fetchStash failed')
+        }
+    }
+
+    (async () => {
+        try {
+            const stash = await fetchStash()
+            console.log(stash)
+
+            $('table[id^="ArticleTable"] tbody tr')
+                    .each(function() {
+                const id = nameToId($(this).attr('data-name'))
+                const amount = parseInt($(this).find('.amount').attr('data-amount'))
+                const lang = langToCode($(this).find('.icon>.icon').attr('aria-label'))
+                const countStash = getCount(stash, id, lang)
+
+                $(this).find('.col-extras').append(`<span>Stash: ${countStash}</span>`)
+
+            })
+
+        } catch (error) {
+            console.error(error)
+        }
+    })();
+}
+
 function addPriceInformationForSiteUsers(id, prices, priceCompare) {
     const rows = $('#UserOffersTable .table-body div[id^=articleRow]').filter(function() {
         return $(this).find('.col-seller').text().indexOf('(' + id + ')') > 0
     })
     rows.find('.product-comments, .prices').remove()
     rows.find('.product-attributes').append($('<div class="prices small"><span>' + prices.map(p => (
-        '<b style="color:' + (p.price <= priceCompare ? 'green' : 'red') + '" prop="'+p.price+' >=? '+priceCompare+' := '+(p.price <= priceCompare)+'">' + p.price + '</b>'
+        '<b style="color:' + (p.price <= priceCompare ? 'green' : 'red') + '">' + p.price + '</b>'
         + ' (' + p.amountAvailable + ')'
         + (p.print ? ' ' + p.print + p.name.replace(/^.*?(\(V\.\d+\))?$/g, '$1') : '')
     )).join('</span><br><span>') + '</span></div>'))
@@ -276,4 +308,21 @@ function getPriceByUrl(url, callbackSuccess, callbackError, async = false) {
         error: function (error) { callbackError(error.status) },
         async: false
     })
+}
+
+function showAlert(type, message, duration = 5000) { // ['primary', 'success', 'danger', 'warning', 'info']
+    const $alert = $(`
+    <div role="alert" class="alert systemMessage alert-${type} alert-dismissible fade show">
+      <span class="fonticon-${type === 'success' ? 'check-circle' : (type === 'info' ? 'info' : (type === 'danger' ? 'cross-circle' : 'warning'))} alert-icon"></span>
+      <button type="button" data-bs-dismiss="alert" aria-label="Close" class="btn-close"></button>
+      <div class="alert-content">
+        <h4 class="alert-heading">${message}</h4>
+      </div>
+    </div>
+    `).appendTo('#AlertContainer')
+
+    if (duration > 0)
+        setTimeout(() => {
+            $alert.alert('close')
+        }, duration)
 }
