@@ -2,7 +2,7 @@
 // @name         OP Cardmarket
 // @description  OP Cardmarket
 // @namespace    njank
-// @version      0.0.4
+// @version      0.0.5
 // @author       njank
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -11,8 +11,11 @@
 // @require      http://code.jquery.com/jquery-latest.min.js
 // ==/UserScript==
 
+/* PARAM */
 const urlGoogleSheets = 'https://script.googleusercontent.com/macros/echo?user_content_key=xxx'
+const keyPrice = 'price6'
 
+/* FUNCTIONS */
 function getCachedObject(cachedKey, fallback={}) {
     let obj = GM_getValue(cachedKey)
     if(obj === undefined)
@@ -24,210 +27,46 @@ function setCachedObject(cachedKey, obj) {
     GM_setValue(cachedKey, JSON.stringify(obj))
 }
 
-const keyPrice = 'price6'
-
 const eurToFloat = s => parseFloat(s.replace(/^.*?(\d+),(\d+).*?$/, '$1.$2'))
 const nameToId = s => s.replace(/^.*\(([A-Z0-9-]+)\).*?$/, '$1')
 const urlParams = new URLSearchParams(window.location.search)
+const langToCode = str => ({Japanese:'jp',English:'en',French:'fr','S-Chinese':'cn'})[str] || str.toLowerCase().slice(0,2)
+const getSum = (stash, id, lang) => stash.filter(s => s[1] === id && (!lang || s[4] === lang)).reduce((sum, s) => sum + (+s[0] || 0), 0)
 
-/*** USERS ***/
-if(window.location.pathname.indexOf('/Users/')) {
-    // PRICES
-    $('#collapsibleExtraFilters .row').append($('<a role="button" class="btn btn-outline-success form-group col-12 mb-2 col-md-2 col-xl-1">Load</a>').click(function() {
-        console.log('load prices')
-        let prices = getCachedObject(keyPrice)
-
-        // identify prices that are not cached yet
-        $('#UserOffersTable .table-body div[id^=articleRow]').each(function() {
-            if($(this).find('.col-seller').text()) {
-                const id = nameToId($(this).find('.col-seller').text())
-                console.log(id)
-                if (id && !prices.hasOwnProperty(id) || prices[id] === 'to load')
-                    prices[id] = 'to load'
-                else
-                    addPriceInformationForSiteUsers(id, prices[id], eurToFloat($(this).find('.col-offer .price-container').text()))
-                console.log(prices[id])
-            }
-        })
-        setCachedObject(keyPrice, prices)
-
-        // get needed prices
-        getPrices(addPriceInformationForSiteUsers)
-
-        console.log(prices)
-    }))
-
-    $('#collapsibleExtraFilters .row').append($('<a role="button" class="btn btn-outline-danger form-group col-12 mb-2 col-md-2 col-xl-1">Delete</a>').click(function() {
-        console.log('delete prices')
-        setCachedObject(keyPrice, {})
-        // todo delete ui
-    }))
-
-    // GET COUNT FROM WANTS SITE
-    const idWantslist = urlParams.get('idWantslist')
-    if(idWantslist) {
-        console.log(idWantslist)
-
-        // get shopping cart
-        async function fetchCart() {
-            try {
-                let cart = []
-                const user = window.location.pathname.replace(/^.*\/Users\/([^\/]+)\/.*$/, '$1')
-                const data = await $.get("/en/OnePiece/ShoppingCart")
-
-                $(data).find(`#shipments-col .card-body a:contains("${user}")`)
-                        .closest('.card-body')
-                        .find('table[id^="ArticleTable"] tbody tr')
-                        .each(function() {
-                    const id = nameToId($(this).attr('data-name'))
-                    const amount = parseInt($(this).find('.amount').attr('data-amount'))
-                    cart[id] = (id in cart ? cart[id] : 0) + amount
-                })
-                return cart
-            } catch (error) {
-                throw new Error('fetchCart failed')
-            }
-        }
-
-        // get wants list information
-        async function fetchWantsList() {
-            try {
-                let wantsList = []
-                const data = await $.get(`/en/OnePiece/Wants/${idWantslist}`)
-
-                $(data).find('#WantsListTable table tbody tr').each(function() {
-                    const id = nameToId($(this).find('.name a').text())
-                    const amount = parseInt($(this).find('.amount').text())
-                    wantsList[id] = amount
-                })
-                return wantsList
-            } catch (error) {
-                throw new Error('fetchWantsList failed')
-            }
-        }
-
-        $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
-            $(this).find('.col-offer').prepend('<span class="want"></span><span class="cart" style="font-size:10px"></span>')
-        });
-
-        (async () => {
-            try {
-                const wantsList = await fetchWantsList()
-
-                let sum = 0, totalAmount = 0
-                $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
-                    // add amount
-                    const id = nameToId($(this).find('.col-seller').text())
-                    $(this).find('.col-offer .want').text(wantsList[id])
-
-                    // calc sum
-                    const priceSeller = eurToFloat($(this).find('.col-offer .price-container').text())
-                    const amountSeller = parseInt($(this).find('.col-offer .amount-container .item-count').text())
-                    const amountNeededAndAvailable = Math.min(amountSeller, wantsList[id])
-                    //console.log(id, wantsList[id], amountSeller, amountNeededAndAvailable)
-
-                    sum += priceSeller * amountNeededAndAvailable
-                    totalAmount += amountNeededAndAvailable
-
-                    // select max amount
-                    $(this).find('select[name^=amount]').val(amountNeededAndAvailable)
-                })
-
-                $('#UserOffersTable .table-header .col-offer').prepend(`${totalAmount} pcs ${Math.round(sum*100)/100} € / `) // header
-
-
-            } catch (error) {
-                console.error(error)
-            }
-        })();
-
-        (async () => {
-            try {
-                const cart = await fetchCart()
-
-                $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
-                    // add amount
-                    const id = nameToId($(this).find('.col-seller').text())
-                    $(this).find('.col-offer .cart').text((id in cart ? -cart[id] : ""))
-                })
-            } catch (error) {
-                console.error(error)
-            }
-        })();
-
-    }
+// get stash
+async function fetchStash() {
+    const data = await $.get(urlGoogleSheets)
+    return data.values
 }
 
-/*** MY LIST ***/
-if(window.location.pathname.indexOf('/Wants/')) {
-    // PRICES
-    $('.container > div:nth-child(4) > div:nth-child(2)').append($('<a role="button" class="btn btn-outline-success ms-lg-3 mt-2 mt-lg-0">Load</a>').click(function() {
-        console.log('load prices')
-        let prices = getCachedObject(keyPrice)
+// get shopping cart
+async function fetchCart() {
+    let cart = []
+    const user = window.location.pathname.replace(/^.*\/Users\/([^\/]+)\/.*$/, '$1')
+    const data = await $.get("/en/OnePiece/ShoppingCart")
 
-        // identify prices that are not cached yet
-        $('table tbody tr').each(function() {
-            if($(this).find('td.name > a').text()) {
-                const id = nameToId($(this).find('td.name > a').text())
-                console.log(id)
-                if (!prices.hasOwnProperty(id) || prices[id] === 'to load')
-                    prices[id] = 'to load'
-                else
-                    addPriceInformationForSiteWants(id, prices[id])
-            }
-        })
-        setCachedObject(keyPrice, prices)
-
-        // get needed prices
-        getPrices(addPriceInformationForSiteWants)
-        console.log(prices)
-
-        $('td').removeClass('min-size')
-        $('th.buyPrice').removeClass('min-size')
-    }))
-    $('.container > div:nth-child(4) > div:nth-child(2)').append($('<a role="button" class="btn btn-outline-danger ms-lg-3 mt-2 mt-lg-0">Delete</a>').click(function() {
-        console.log('delete prices')
-        setCachedObject(keyPrice, {})
-        // todo delete ui
-    }))
+    $(data).find(`#shipments-col .card-body a:contains("${user}")`)
+        .closest('.card-body')
+        .find('table[id^="ArticleTable"] tbody tr')
+        .each(function() {
+        const id = nameToId($(this).attr('data-name'))
+        const amount = parseInt($(this).find('.amount').attr('data-amount'))
+        cart[id] = (id in cart ? cart[id] : 0) + amount
+    })
+    return cart
 }
 
-/*** SHOPPING CART ***/
-if(window.location.pathname.indexOf('/ShoppingCart')) {
+// get wants list information
+async function fetchWantsList(idWantslist) {
+    let wantsList = []
+    const data = await $.get(`/en/OnePiece/Wants/${idWantslist}`)
 
-    const langToCode = str => ({Japanese:'jp',English:'en',French:'fr','S-Chinese':'cn'})[str] || str.toLowerCase().slice(0,2)
-    const getCount = (stash, id, lang) => stash.find(s => s[1] === id && s[2] === lang)?.[0] ?? 0
-
-    // get stash
-    async function fetchStash() {
-        try {
-            const data = await $.get(urlGoogleSheets)
-            return data.values
-        } catch (error) {
-            throw new Error('fetchStash failed')
-        }
-    }
-
-    (async () => {
-        try {
-            const stash = await fetchStash()
-            console.log(stash)
-
-            $('table[id^="ArticleTable"] tbody tr')
-                    .each(function() {
-                const id = nameToId($(this).attr('data-name'))
-                const amount = parseInt($(this).find('.amount').attr('data-amount'))
-                const lang = langToCode($(this).find('.icon>.icon').attr('aria-label'))
-                const countStash = getCount(stash, id, lang)
-
-                $(this).find('.col-extras').append(`<span>Stash: ${countStash}</span>`)
-
-            })
-
-        } catch (error) {
-            console.error(error)
-        }
-    })();
+    $(data).find('#WantsListTable table tbody tr').each(function() {
+        const id = nameToId($(this).find('.name a').text())
+        const amount = parseInt($(this).find('.amount').text())
+        wantsList[id] = amount
+    })
+    return wantsList
 }
 
 function addPriceInformationForSiteUsers(id, prices, priceCompare) {
@@ -311,9 +150,10 @@ function getPriceByUrl(url, callbackSuccess, callbackError, async = false) {
 }
 
 function showAlert(type, message, duration = 5000) { // ['primary', 'success', 'danger', 'warning', 'info']
+    const getIcon = (type) => { switch(type) { case 'success': return 'check-circle'; case 'danger': return 'cross-circle'; default: return type; } };
     const $alert = $(`
     <div role="alert" class="alert systemMessage alert-${type} alert-dismissible fade show">
-      <span class="fonticon-${type === 'success' ? 'check-circle' : (type === 'info' ? 'info' : (type === 'danger' ? 'cross-circle' : 'warning'))} alert-icon"></span>
+      <span class="fonticon-${getIcon(type)} alert-icon"></span>
       <button type="button" data-bs-dismiss="alert" aria-label="Close" class="btn-close"></button>
       <div class="alert-content">
         <h4 class="alert-heading">${message}</h4>
@@ -326,3 +166,211 @@ function showAlert(type, message, duration = 5000) { // ['primary', 'success', '
             $alert.alert('close')
         }, duration)
 }
+
+/*** OFFERS ***/
+if(window.location.pathname.indexOf('/Offers/Singles/')) {
+    // PRICES
+    $('#collapsibleExtraFilters .row').append($('<a role="button" class="btn btn-outline-success form-group col-12 mb-2 col-md-2 col-xl-1">Load</a>').click(function() {
+        console.log('load prices')
+        let prices = getCachedObject(keyPrice)
+
+        // identify prices that are not cached yet
+        $('#UserOffersTable .table-body div[id^=articleRow]').each(function() {
+            if($(this).find('.col-seller').text()) {
+                const id = nameToId($(this).find('.col-seller').text())
+                console.log(id)
+                if (id && !prices.hasOwnProperty(id) || prices[id] === 'to load')
+                    prices[id] = 'to load'
+                else
+                    addPriceInformationForSiteUsers(id, prices[id], eurToFloat($(this).find('.col-offer .price-container').text()))
+                console.log(prices[id])
+            }
+        })
+        setCachedObject(keyPrice, prices)
+
+        // get needed prices
+        getPrices(addPriceInformationForSiteUsers)
+
+        console.log(prices)
+    }))
+
+    $('#collapsibleExtraFilters .row').append($('<a role="button" class="btn btn-outline-danger form-group col-12 mb-2 col-md-2 col-xl-1">Delete</a>').click(function() {
+        console.log('delete prices')
+        setCachedObject(keyPrice, {})
+        // todo delete ui
+    }))
+
+    // GET COUNT FROM WANTS SITE
+    const idWantslist = urlParams.get('idWantslist')
+    if(idWantslist) {
+        console.log(idWantslist)
+
+        ;(async () => {
+            try {
+                const wantsList = await fetchWantsList(idWantslist)
+
+                let sum = 0, totalAmount = 0
+                $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
+                    // add amount
+                    const id = nameToId($(this).find('.col-seller').text())
+                    $(this).find('.product-attributes').append(`<span><span class="fonticon-wants icon is-16x16"></span>${wantsList[id]}&nbsp;</span>`)
+
+                    // calc sum
+                    const priceSeller = eurToFloat($(this).find('.col-offer .price-container').text())
+                    const amountSeller = parseInt($(this).find('.col-offer .amount-container .item-count').text())
+                    const amountNeededAndAvailable = Math.min(amountSeller, wantsList[id])
+                    //console.log(id, wantsList[id], amountSeller, amountNeededAndAvailable)
+
+                    sum += priceSeller * amountNeededAndAvailable
+                    totalAmount += amountNeededAndAvailable
+
+                    // select max amount
+                    $(this).find('select[name^=amount]').val(amountNeededAndAvailable)
+                })
+
+                $('#UserOffersTable .table-header .col-offer').prepend(`${totalAmount} pcs ${Math.round(sum*100)/100} € / `) // header
+
+
+            } catch (error) {
+                console.error(error)
+            }
+        })()
+
+        ;(async () => {
+            try {
+                const cart = await fetchCart()
+
+                $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
+                    // add amount
+                    const id = nameToId($(this).find('.col-seller').text())
+                    if(id in cart)
+                        $(this).find('.product-attributes').append(`<span><span class="fonticon-cart icon is-16x16"></span>${cart[id]}&nbsp;</span>`)
+                })
+            } catch (error) {
+                console.error(error)
+            }
+        })()
+
+        ;(async () => {
+            try {
+                const stash = await fetchStash()
+
+                $('#UserOffersTable .table-body div[id^=articleRow]').each(function( index ) {
+                    // add amount
+                    const id = nameToId($(this).find('.col-seller').text())
+                    const lang = langToCode($(this).find('.product-attributes>.icon').attr('aria-label'))
+                    const countStash = getSum(stash, id, lang)
+                    const countStashAllLang = getSum(stash, id, undefined)
+                    const countStashAllLangAbbr = countStashAllLang > countStash ? ' (<abbr title="Same card in all languages">'+countStashAllLang+'</abbr>)' : ''
+
+                    if(countStash > 0 || countStashAllLang > 0)
+                        $(this).find('.product-attributes').append(`<span><span class="fonticon-offers icon is-16x16"></span>${countStash}${countStashAllLangAbbr}&nbsp;</span>`)
+                })
+            } catch (error) {
+                console.error(error)
+            }
+        })()
+
+    }
+}
+
+/*** MY LIST ***/
+if(window.location.pathname.indexOf('/Wants/')) {
+    // PRICES
+    $('.container > div:nth-child(4) > div:nth-child(2)').append($('<a role="button" class="btn btn-outline-success ms-lg-3 mt-2 mt-lg-0">Load</a>').click(function() {
+        console.log('load prices')
+        let prices = getCachedObject(keyPrice)
+
+        // identify prices that are not cached yet
+        $('table tbody tr').each(function() {
+            if($(this).find('td.name > a').text()) {
+                const id = nameToId($(this).find('td.name > a').text())
+                console.log(id)
+                if (!prices.hasOwnProperty(id) || prices[id] === 'to load')
+                    prices[id] = 'to load'
+                else
+                    addPriceInformationForSiteWants(id, prices[id])
+            }
+        })
+        setCachedObject(keyPrice, prices)
+
+        // get needed prices
+        getPrices(addPriceInformationForSiteWants)
+        console.log(prices)
+
+        $('td').removeClass('min-size')
+        $('th.buyPrice').removeClass('min-size')
+    }))
+    $('.container > div:nth-child(4) > div:nth-child(2)').append($('<a role="button" class="btn btn-outline-danger ms-lg-3 mt-2 mt-lg-0">Delete</a>').click(function() {
+        console.log('delete prices')
+        setCachedObject(keyPrice, {})
+        // todo delete ui
+    }))
+
+    // STASH
+    ;(async () => {
+        try {
+            const stash = await fetchStash()
+
+            $('#WantsListTable table tbody tr').each(function() {
+                const id = nameToId($(this).find('.name a').text())
+                const languages = $(this).find('.languages .icon').map(function() {
+                    return langToCode($(this).attr('aria-label'))
+                }).get()
+
+                let countStashString = ''
+                let countStash = 0
+                languages.forEach((lang) => countStashString += ' ' + (countStash += getSum(stash, id, lang)))
+
+                const countStashAllLang = getSum(stash, id, undefined)
+                if(countStashAllLang > countStash)
+                    countStashString += ' (<abbr title="Same card in all languages">'+countStashAllLang+'</abbr>)'
+
+                console.log(countStashString)
+
+                if(countStash > 0 || countStashAllLang > 0)
+                    $(this).find('td:nth-child(8)').append(`<span><span class="fonticon-offers icon is-16x16"></span>${countStashString}</span>`)
+            })
+        } catch (error) {
+            console.error(error)
+        }
+    })()
+}
+
+/*** SHOPPING CART ***/
+if(window.location.pathname.indexOf('/ShoppingCart')) {
+
+    ;(async () => {
+        try {
+            const stash = await fetchStash()
+
+            $('table[id^="ArticleTable"] tbody tr')
+                    .each(function() {
+                const id = nameToId($(this).attr('data-name'))
+                const amount = parseInt($(this).find('.amount').attr('data-amount'))
+                const lang = langToCode($(this).find('.icon>.icon').attr('aria-label'))
+                const countStash = getSum(stash, id, lang)
+                const countStashAllLang = getSum(stash, id, undefined)
+                const countStashAllLangAbbr = countStashAllLang > countStash ? ' (<abbr title="Same card in all languages">'+countStashAllLang+'</abbr>)' : ''
+
+                $(this).find('.extras').append(`<span><span class="fonticon-offers icon is-16x16"></span> Stash: ${countStash}${countStashAllLangAbbr}</span>`)
+            })
+
+        } catch (error) {
+            console.error(error)
+        }
+    })()
+}
+
+/*** SINGLES ***/
+if(window.location.pathname.indexOf('/Products/Singles/')) {
+    const stash = await fetchStash()
+    const name = $('.page-title-container h1').clone().children().remove().end().text()
+    const id = nameToId(name)
+    const countStashAllLang = getSum(stash, id, undefined)
+
+    console.log(countStashAllLang )
+    $('.info-list-container>dl').append(`<dt class="col-6 col-xl-5">Stash</dt>`)
+    $('.info-list-container>dl').append(`<dd class="col-6 col-xl-7"><span class="fonticon-offers icon is-16x16"></span> <span>${countStashAllLang}</span></dd>`)
+}
+
